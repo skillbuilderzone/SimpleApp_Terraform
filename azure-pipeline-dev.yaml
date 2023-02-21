@@ -122,7 +122,7 @@ stages :
           inputs:
             provider: 'azurerm'
             command: 'plan'
-            commandOptions: '-var-file="./$(environment)/config-$(environment).tfvars" -out main.tfplan'
+            commandOptions: '-var-file="config.tfvars" -out main.tfplan'
             environmentServiceNameAzureRM: $(serviceconnection)
             workingDirectory: '$(working_directory)'
 
@@ -206,7 +206,7 @@ stages :
           inputs:
             provider: 'azurerm'
             command: 'plan'
-            commandOptions: '-input=false -var-file="./$(environment)/config-$(environment).tfvars"'
+            commandOptions: '-input=false -var-file="config.tfvars"'
             environmentServiceNameAzureRM: '$(serviceconnection)'
             workingDirectory: '$(working_directory)'
 
@@ -215,7 +215,7 @@ stages :
           inputs:
             provider: 'azurerm'
             command: 'apply'
-            commandOptions: '-input=false -auto-approve -var-file="./$(environment)/config-$(environment).tfvars"'
+            commandOptions: '-input=false -auto-approve -var-file="config.tfvars"'
             environmentServiceNameAzureRM: '$(serviceconnection)'
             workingDirectory: '$(working_directory)'
 
