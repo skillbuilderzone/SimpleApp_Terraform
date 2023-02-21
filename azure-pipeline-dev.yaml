@@ -98,7 +98,7 @@ stages :
     jobs:
       - deployment: 'Approval_Apply_Stage'
         displayName: 'Approval gate for this stage'
-        environment: 'cult-fo-dev'
+        environment: 'dev'
       - job: plan
         displayName: 'Terraform_plan_dev'
         continueOnError: false
