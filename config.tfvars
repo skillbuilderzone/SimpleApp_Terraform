@@ -1,0 +1,1 @@
+location-rg = "uksouth"

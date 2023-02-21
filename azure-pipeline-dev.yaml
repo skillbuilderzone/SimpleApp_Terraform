@@ -1,0 +1,233 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- develop
+
+variables:
+ - name: 'serviceconnection'
+   value: 'fitnessgeek-sc'
+
+ - name: 'environment'
+   value: 'dev'
+
+ - name: 'backend_rg'
+   value: 'terraform-backend'
+
+ - name: 'backend_storageaccount'
+   value: 'terraformbackend2023'
+
+ - name: 'backend_container'
+   value: 'terraform'
+
+ - name: 'backendkey_tfstate'
+   value: 'terraform.tfstate'
+
+ - name: 'working_directory'
+   value: '$(System.DefaultWorkingDirectory)/microservices'
+
+
+
+pool:
+  vmImage: ubuntu-latest
+
+stages :
+  - stage: "runCheckov"
+    displayName: "Checkov: Static Code Analysis"
+    jobs:
+      - job: "runCheckov"
+        displayName: "Checkov > Pull, run and publish results of Checkov scan"
+        steps:
+        - task: Bash@3
+          inputs:
+            targetType: 'inline'
+            script: 'pip install checkov'
+            displayName: Install checkov
+        - task: Bash@3
+          inputs:
+            targetType: 'inline'
+            workingDirectory: $(working_directory)
+            script: 'checkov -d . -o junitxml > scan-result.xml --soft-fail'
+            displayName: Checkov source code scan
+            continueOnError: true
+        - task: PublishTestResults@2
+          inputs:
+            testResultsFormat: 'JUnit'
+            searchFolder: '$(working_directory)'
+            testResultsFiles: '**/*scan-result.xml'
+            mergeTestResults: false
+            testRunTitle: Terraform source code scan
+            failTaskOnFailedTests: false
+            publishRunAttachments: true
+            displayName: Publish Test Result
+
+  - stage: validate
+    displayName : 'Terraform Validate'
+    jobs:
+    - job: validate
+      continueOnError: false
+      steps:
+      - task: TerraformInstaller@0
+        displayName: 'install'
+        inputs:
+          terraformVersion: 'latest'
+      - task: TerraformTaskV2@2
+        displayName: 'init'
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          backendServiceArm: $(serviceconnection)
+          backendAzureRmResourceGroupName: '$(backend_rg)'
+          backendAzureRmStorageAccountName: $(backend_storageaccount)
+          backendAzureRmContainerName: $(backend_container)
+          backendAzureRmKey: $(backendkey_tfstate)
+          workingDirectory: '$(working_directory)'
+      - task: TerraformTaskV2@2
+        displayName: 'validate'
+        inputs:
+          provider: 'azurerm'
+          command: 'validate' 
+
+  - stage: Plan_Apply_dev
+    dependsOn: [validate]
+    condition: succeeded('validate')
+    displayName: Plan_Apply_dev
+    jobs:
+      - deployment: 'Approval_Apply_Stage'
+        displayName: 'Approval gate for this stage'
+        environment: 'cult-fo-dev'
+      - job: plan
+        displayName: 'Terraform_plan_dev'
+        continueOnError: false
+        steps:
+        - task: TerraformInstaller@0
+          displayName: 'install'
+          inputs:
+           terraformVersion: 'latest'
+        - task: TerraformTaskV2@2
+          displayName: init
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: $(serviceconnection)
+            backendAzureRmResourceGroupName: '$(backend_rg)'
+            backendAzureRmStorageAccountName: $(backend_storageaccount)
+            backendAzureRmContainerName: $(backend_container)
+            backendAzureRmKey: $(backendkey_tfstate)
+            workingDirectory: '$(working_directory)'
+        - task: TerraformTaskV2@2
+          displayName: plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            commandOptions: '-var-file="./$(environment)/config-$(environment).tfvars" -out main.tfplan'
+            environmentServiceNameAzureRM: $(serviceconnection)
+            workingDirectory: '$(working_directory)'
+
+#Checkov to scan the execution plan for vulnerabilities and exposed outputs
+        - task: Bash@3
+          inputs:
+            targetType: 'inline'
+            script: 'pip install checkov'
+            displayName: Install checkov        
+        - task: Bash@3
+          inputs:
+            targetType: 'inline'
+            workingDirectory: '$(working_directory)'           
+            script: |
+                    terraform show -json main.tfplan > main.json
+                      checkov --skip-check "CKV_AZURE_101,CKV_AZURE_140,CKV_AZURE_100,CKV_AZURE_99,CKV_AZURE_107,CKV2_AZURE_18,CKV2_AZURE_1,CKV_AZURE_110,CKV_AZURE_42,CKV_AZURE_41,CKV_AZURE_109" -f main.json -o junitxml > Checkov-Plan-Report.xml --soft-fail
+          continueOnError: true
+          displayName: Checkov plan scan
+        - task: PublishTestResults@2
+          inputs:
+            testResultsFormat: 'JUnit'
+            searchFolder: '$(working_directory)'
+            testResultsFiles: '**/*Checkov-Plan-Report.xml'
+            mergeTestResults: false
+            testRunTitle: Checkov $(environment) workspace plan scan
+            failTaskOnFailedTests: false
+            publishRunAttachments: true
+          displayName: Publish Test Result
+      - job: waitForValidation
+        displayName: Wait for execution plan validation
+        pool: server
+        timeoutInMinutes: 4320 # job times out in 3 days
+        steps:
+        - task: ManualValidation@0
+          timeoutInMinutes: 1440 # task times out in 1 day
+          inputs:
+            notifyUsers: |
+              rdadhichi@cultwines.com
+            instructions: 'Please validate the build configuration and resume'
+            onTimeout: 'reject'
+      
+# Adding the apply job
+#timeoutInMinutes: 0 is very important else the pipeline job will timeout
+
+      - job: Terraform_apply_dev
+        dependsOn :
+        - plan
+        - waitForValidation
+        condition: |
+          and
+           (
+             eq(dependencies.plan.result, 'Succeeded'),
+             eq(dependencies.waitForValidation.result, 'Succeeded')
+           )
+        timeoutInMinutes: 0
+        steps:
+        - checkout: self
+        - task: TerraformInstaller@0
+          displayName: 'install'
+          inputs:
+            terraformVersion: 'latest'
+        - task: TerraformTaskV2@2
+          displayName: 'init'
+          inputs:
+            provider: 'azurerm'
+            command: 'init'
+            backendServiceArm: $(serviceconnection)
+            backendAzureRmResourceGroupName: '$(backend_rg)'
+            backendAzureRmStorageAccountName: $(backend_storageaccount)
+            backendAzureRmContainerName: $(backend_container)
+            backendAzureRmKey: $(backendkey_tfstate)
+            workingDirectory: '$(working_directory)'
+        - task: Bash@3
+          inputs:
+            targetType: 'inline'
+            script: 'printenv'
+            displayName: printenv
+            
+        - task: TerraformTaskV2@2
+          displayName: 'plan'
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            commandOptions: '-input=false -var-file="./$(environment)/config-$(environment).tfvars"'
+            environmentServiceNameAzureRM: '$(serviceconnection)'
+            workingDirectory: '$(working_directory)'
+
+        - task: TerraformTaskV2@2
+          displayName: 'apply'
+          inputs:
+            provider: 'azurerm'
+            command: 'apply'
+            commandOptions: '-input=false -auto-approve -var-file="./$(environment)/config-$(environment).tfvars"'
+            environmentServiceNameAzureRM: '$(serviceconnection)'
+            workingDirectory: '$(working_directory)'
+
+            
+  
+            
+
+
+
+           
+
+    
+              
+    
+    
