@@ -46,7 +46,7 @@ resource "azurerm_mssql_database" "fg-database" {
   name           = "fg-db"
   server_id      = azurerm_mssql_server.azuresql.id
   collation      = "SQL_Latin1_General_CP1_CI_AS"
-  max_size_gb    = "4"
+  max_size_gb    = 2
   read_scale     = false
   sku_name       = "S0"
   zone_redundant = false
