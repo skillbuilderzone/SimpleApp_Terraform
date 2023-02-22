@@ -36,3 +36,15 @@ resource "azurerm_key_vault_access_policy" "kv_access_policy_02" {
 
   depends_on = [azurerm_key_vault.fg-keyvault]
 }
+
+
+resource "azurerm_key_vault_access_policy" "kv_access_policy_03" {
+  #This policy adds databaseadmin group with below permissions
+  key_vault_id       = azurerm_key_vault.fg-keyvault.id
+  tenant_id          = data.azurerm_client_config.current.tenant_id
+  object_id          = "ef581861-a1a9-4d40-9fcb-cd6f6b97bf4b"
+  key_permissions    = ["Get", "List"]
+  secret_permissions = ["Get", "Backup", "Delete", "List", "Purge", "Recover", "Restore", "Set"]
+
+  depends_on = [azurerm_key_vault.fg-keyvault]
+}
