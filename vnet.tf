@@ -30,6 +30,12 @@ resource "azurerm_subnet" "fe-subnet" {
 
 
   }
+
+  lifecycle {
+    ignore_changes = [
+      delegation,
+    ]
+  }
 }
 
 #Create subnets
@@ -49,6 +55,12 @@ resource "azurerm_subnet" "be-subnet" {
     }
 
 
+  }
+
+  lifecycle {
+    ignore_changes = [
+      delegation,
+    ]
   }
 }
 
