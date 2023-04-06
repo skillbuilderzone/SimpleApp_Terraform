@@ -33,6 +33,7 @@ resource "azurerm_mssql_server" "azuresql" {
 }
 
 #add subnet from the backend vnet
+#adding a new comment in main branch
 resource "azurerm_mssql_virtual_network_rule" "allow-be" {
   name      = "be-sql-vnet-rule"
   server_id = azurerm_mssql_server.azuresql.id
